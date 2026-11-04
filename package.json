@@ -1,0 +1,21 @@
+{
+  "name": "banco-receptor-simulador",
+  "version": "1.0.0",
+  "description": "Servidor simulador de webhook receptor de pagos para comercios afiliados a Celupagos",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js",
+    "dev": "node --watch server.js"
+  },
+  "keywords": [
+    "celupagos",
+    "webhook",
+    "push-notifications",
+    "simulator"
+  ],
+  "author": "",
+  "license": "ISC",
+  "dependencies": {
+    "express": "^4.21.2"
+  }
+}
