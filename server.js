@@ -1,16 +1,37 @@
 const express = require('express');
+const path = require('path');
 
 const app = express();
 const PORT = process.env.PORT || 4000;
 const API_KEY = process.env.API_KEY || 'mi_clave_secreta_webhook_123';
 
+// Normalizar req.url cuando Vercel o proxies reescriben la ruta
+app.use((req, res, next) => {
+    const matchedPath = req.headers['x-matched-path'];
+    if (matchedPath && !matchedPath.includes('/api/index') && !matchedPath.includes('/server.js')) {
+        req.url = matchedPath;
+    } else if (req.url.startsWith('/server.js')) {
+        req.url = req.url.replace('/server.js', '') || '/';
+    } else if (req.url.startsWith('/api/index.js')) {
+        req.url = req.url.replace('/api/index.js', '') || '/';
+    }
+    if (!req.url.startsWith('/')) {
+        req.url = '/' + req.url;
+    }
+    next();
+});
+
 // Middleware para parsear JSON
 app.use(express.json());
+
+// Servir archivos estáticos del frontend
+app.use(express.static(path.join(__dirname, 'public')));
 
 // Estado en memoria para pruebas
 let simulateFailures = false;
 let simulateFailureStatusCode = 500;
-const history = [];
+const history = global.__webhook_history || [];
+global.__webhook_history = history;
 
 // Middleware de Logging
 app.use((req, res, next) => {
@@ -19,9 +40,8 @@ app.use((req, res, next) => {
     next();
 });
 
-// 1. Endpoint Principal de Salud / Estado
-app.get('/', (req, res) => {
-    res.json({
+function getServerStatus() {
+    return {
         service: 'Banco Receptor Simulador (Webhook Celupagos V1.0)',
         status: 'ONLINE',
         port: PORT,
@@ -29,13 +49,26 @@ app.get('/', (req, res) => {
         simulateFailures,
         totalNotificationsReceived: history.length,
         endpoints: {
+            dashboard: 'GET /',
             webhook: 'POST /webhooks/pagos',
             health: 'GET /health',
             history: 'GET /history',
             clearHistory: 'POST /history/clear',
             toggleFailures: 'POST /config/toggle-fail'
         }
-    });
+    };
+}
+
+// 1. Endpoint Principal: Dashboard Web o JSON de Estado
+app.get('/', (req, res) => {
+    if (req.headers.accept && req.headers.accept.includes('text/html')) {
+        return res.sendFile(path.join(__dirname, 'public', 'index.html'));
+    }
+    res.json(getServerStatus());
+});
+
+app.get('/api/status', (req, res) => {
+    res.json(getServerStatus());
 });
 
 app.get('/health', (req, res) => {
@@ -152,8 +185,8 @@ app.post('/config/toggle-fail', (req, res) => {
 // Exportar app para despliegues Serverless (como Vercel) y pruebas
 module.exports = app;
 
-// Iniciar Servidor en entornos tradicionales / contenedores (Render, Railway, local)
-if (require.main === module || !process.env.VERCEL) {
+// Iniciar Servidor únicamente si se ejecuta directamente con `node server.js`
+if (require.main === module) {
     app.listen(PORT, () => {
         console.log('============================================================');
         console.log(`BANCO RECEPTOR SIMULADOR EN LINEA`);

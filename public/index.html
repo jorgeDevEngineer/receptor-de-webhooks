@@ -1,0 +1,440 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Monitor de Webhooks Celupagos - Comercio Receptor</title>
+    <!-- Tailwind CSS CDN -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        @keyframes pulse-subtle {
+            0%, 100% { opacity: 1; }
+            50% { opacity: 0.6; }
+        }
+        .animate-subtle {
+            animation: pulse-subtle 2s cubic-bezier(0.4, 0, 0.6, 1) infinite;
+        }
+    </style>
+</head>
+<body class="bg-slate-950 text-slate-100 min-h-screen flex flex-col font-sans selection:bg-blue-600 selection:text-white">
+
+    <!-- Header Principal -->
+    <header class="border-b border-slate-800 bg-slate-900/80 backdrop-blur sticky top-0 z-30">
+        <div class="max-w-7xl mx-auto px-4 sm:px-6 py-4 flex flex-wrap items-center justify-between gap-4">
+            <div class="flex items-center space-x-3">
+                <div class="w-10 h-10 rounded-lg bg-blue-600 flex items-center justify-center font-bold text-white tracking-wider shadow-md shadow-blue-500/20">
+                    CP
+                </div>
+                <div>
+                    <div class="flex items-center space-x-2">
+                        <h1 class="text-lg font-bold text-white tracking-tight">Receptor de Webhooks Celupagos</h1>
+                        <span class="px-2 py-0.5 text-xs font-semibold rounded bg-blue-500/10 text-blue-400 border border-blue-500/20">
+                            Estándar V1.0
+                        </span>
+                    </div>
+                    <p class="text-xs text-slate-400">Simulador de Comercio Afiliado • Monitoreo de Notificaciones Push</p>
+                </div>
+            </div>
+
+            <!-- Indicadores de Estado -->
+            <div class="flex items-center space-x-3">
+                <div id="statusBadge" class="flex items-center space-x-2 px-3 py-1.5 rounded-full bg-emerald-500/10 border border-emerald-500/20 text-emerald-400 text-xs font-semibold">
+                    <span class="w-2 h-2 rounded-full bg-emerald-500 animate-subtle"></span>
+                    <span id="statusText">SERVICIO EN LÍNEA</span>
+                </div>
+                <div id="simModeBadge" class="hidden flex items-center space-x-2 px-3 py-1.5 rounded-full bg-amber-500/10 border border-amber-500/20 text-amber-400 text-xs font-semibold">
+                    <span>MODO FALLO ACTIVO (HTTP 500)</span>
+                </div>
+            </div>
+        </div>
+    </header>
+
+    <!-- Contenido Principal -->
+    <main class="max-w-7xl mx-auto px-4 sm:px-6 py-6 flex-1 w-full space-y-6">
+
+        <!-- Banner de Configuración Técnica -->
+        <section class="bg-slate-900 border border-slate-800 rounded-xl p-5 shadow-xl">
+            <h2 class="text-sm font-semibold text-slate-300 uppercase tracking-wider mb-4">
+                Parámetros de Integración para Celupagos
+            </h2>
+            <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <!-- Endpoint URL -->
+                <div class="space-y-1.5">
+                    <label class="text-xs font-medium text-slate-400">Callback URL del Webhook (Registrar en Celupagos)</label>
+                    <div class="flex items-center space-x-2">
+                        <input id="webhookUrlInput" type="text" readonly
+                            class="bg-slate-950 border border-slate-700 rounded-lg px-3 py-2 text-xs font-mono text-slate-200 flex-1 focus:outline-none focus:border-blue-500 selection:bg-blue-600">
+                        <button onclick="copyToClipboard('webhookUrlInput', this)" 
+                            class="px-3 py-2 bg-slate-800 hover:bg-slate-700 text-slate-200 text-xs font-medium rounded-lg border border-slate-700 transition flex items-center space-x-1">
+                            <span>Copiar</span>
+                        </button>
+                    </div>
+                </div>
+
+                <!-- API Key -->
+                <div class="space-y-1.5">
+                    <label class="text-xs font-medium text-slate-400">Clave Secreta de Autenticación (Cabecera x-api-key)</label>
+                    <div class="flex items-center space-x-2">
+                        <input id="apiKeyInput" type="text" readonly
+                            class="bg-slate-950 border border-slate-700 rounded-lg px-3 py-2 text-xs font-mono text-slate-200 flex-1 focus:outline-none focus:border-blue-500 selection:bg-blue-600">
+                        <button onclick="copyToClipboard('apiKeyInput', this)" 
+                            class="px-3 py-2 bg-slate-800 hover:bg-slate-700 text-slate-200 text-xs font-medium rounded-lg border border-slate-700 transition flex items-center space-x-1">
+                            <span>Copiar</span>
+                        </button>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Acciones de Prueba -->
+            <div class="mt-5 pt-4 border-t border-slate-800 flex flex-wrap items-center justify-between gap-3">
+                <div class="flex items-center space-x-3">
+                    <button id="toggleFailBtn" onclick="toggleSimulateFailure()"
+                        class="px-3.5 py-1.5 rounded-lg text-xs font-semibold bg-amber-500/10 hover:bg-amber-500/20 text-amber-300 border border-amber-500/30 transition flex items-center space-x-2">
+                        <span class="w-1.5 h-1.5 rounded-full bg-amber-400"></span>
+                        <span id="toggleFailText">Activar Simulación de Error 500 (Probar Reintentos)</span>
+                    </button>
+                </div>
+
+                <div class="flex items-center space-x-3 text-xs text-slate-400">
+                    <span id="lastPollingTime">Sincronizando...</span>
+                    <button onclick="clearHistory()" 
+                        class="px-3 py-1.5 bg-rose-500/10 hover:bg-rose-500/20 text-rose-300 border border-rose-500/30 rounded-lg transition font-medium">
+                        Limpiar Historial
+                    </button>
+                </div>
+            </div>
+        </section>
+
+        <!-- Métricas Rápidas -->
+        <section class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+            <div class="bg-slate-900 border border-slate-800 rounded-xl p-4">
+                <div class="text-xs font-medium text-slate-400 uppercase tracking-wider">Pagos Recibidos</div>
+                <div id="statCount" class="text-2xl font-bold text-white mt-1">0</div>
+                <div class="text-[11px] text-slate-500 mt-0.5">Persistido en sesión local</div>
+            </div>
+
+            <div class="bg-slate-900 border border-slate-800 rounded-xl p-4">
+                <div class="text-xs font-medium text-slate-400 uppercase tracking-wider">Monto Total Acumulado</div>
+                <div id="statTotalAmount" class="text-2xl font-bold text-blue-400 mt-1">0.00 VES</div>
+                <div class="text-[11px] text-slate-500 mt-0.5">Sumatoria de transacciones</div>
+            </div>
+
+            <div class="bg-slate-900 border border-slate-800 rounded-xl p-4">
+                <div class="text-xs font-medium text-slate-400 uppercase tracking-wider">Último Pago</div>
+                <div id="statLastRef" class="text-lg font-mono font-semibold text-slate-200 mt-1 truncate">Ninguno</div>
+                <div id="statLastTime" class="text-[11px] text-slate-500 mt-0.5">En espera de transacciones</div>
+            </div>
+
+            <div class="bg-slate-900 border border-slate-800 rounded-xl p-4">
+                <div class="text-xs font-medium text-slate-400 uppercase tracking-wider">Respuesta a Celupagos</div>
+                <div id="statResponseMode" class="text-lg font-semibold text-emerald-400 mt-1">HTTP 200 OK</div>
+                <div id="statResponseSub" class="text-[11px] text-slate-500 mt-0.5">Modo de operación normal</div>
+            </div>
+        </section>
+
+        <!-- Feed de Notificaciones en Vivo -->
+        <section class="bg-slate-900 border border-slate-800 rounded-xl p-5 shadow-xl">
+            <div class="flex items-center justify-between mb-4">
+                <div>
+                    <h3 class="text-base font-bold text-white tracking-tight">Historial de Notificaciones Push</h3>
+                    <p class="text-xs text-slate-400">Listado cronológico de pagos procesados mediante el Estándar V1.0</p>
+                </div>
+                <div class="flex items-center space-x-2 text-xs text-slate-400">
+                    <span class="w-2 h-2 rounded-full bg-blue-500 animate-subtle"></span>
+                    <span>Actualización en vivo (2s)</span>
+                </div>
+            </div>
+
+            <!-- Contenedor de Tarjetas -->
+            <div id="notificationsContainer" class="space-y-3">
+                <!-- Estado Vacío Inicial -->
+                <div id="emptyState" class="py-16 text-center border-2 border-dashed border-slate-800 rounded-xl">
+                    <div class="w-12 h-12 mx-auto rounded-full bg-slate-800 flex items-center justify-center text-slate-500 font-mono text-sm mb-3">
+                        CP
+                    </div>
+                    <div class="text-slate-300 font-semibold text-sm">No se han recibido notificaciones aún</div>
+                    <p class="text-slate-500 text-xs mt-1 max-w-sm mx-auto">
+                        Cuando un banco (BDV o BVC) notifique un pago a Celupagos, este despachará el webhook a este endpoint y aparecerá automáticamente aquí.
+                    </p>
+                </div>
+            </div>
+        </section>
+
+    </main>
+
+    <!-- Modal para Inspeccionar Payload JSON -->
+    <div id="jsonModal" class="hidden fixed inset-0 z-50 bg-black/80 backdrop-blur-sm flex items-center justify-center p-4">
+        <div class="bg-slate-900 border border-slate-800 rounded-xl max-w-2xl w-full max-h-[85vh] flex flex-col shadow-2xl">
+            <div class="px-5 py-4 border-b border-slate-800 flex items-center justify-between">
+                <div>
+                    <h4 class="text-sm font-bold text-white">Payload Técnico V1.0 Completo</h4>
+                    <span id="modalRefTitle" class="text-xs text-blue-400 font-mono">Ref: </span>
+                </div>
+                <button onclick="closeJsonModal()" class="text-slate-400 hover:text-white px-2 py-1 text-sm font-semibold rounded">
+                    Cerrar
+                </button>
+            </div>
+            <div class="p-4 overflow-y-auto flex-1 bg-slate-950 font-mono text-xs text-slate-300">
+                <pre id="jsonPayloadDisplay" class="whitespace-pre-wrap"></pre>
+            </div>
+            <div class="px-5 py-3 border-t border-slate-800 flex justify-end">
+                <button onclick="copyModalJson(this)" class="px-3 py-1.5 bg-blue-600 hover:bg-blue-500 text-white rounded-lg text-xs font-medium transition">
+                    Copiar JSON
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Footer -->
+    <footer class="border-t border-slate-800 bg-slate-900/50 py-4 text-center text-xs text-slate-500">
+        Monitor de Pruebas Webhooks • Celupagos • Estándar Técnico de Integración V1.0
+    </footer>
+
+    <!-- Lógica JavaScript del Dashboard -->
+    <script>
+        const LOCAL_STORAGE_KEY = 'celupagos_webhook_history';
+        let currentHistory = [];
+        let isSimulatingFail = false;
+
+        // Cargar historial previo de localStorage
+        function loadLocalHistory() {
+            try {
+                const stored = localStorage.getItem(LOCAL_STORAGE_KEY);
+                if (stored) {
+                    currentHistory = JSON.parse(stored);
+                }
+            } catch (e) {
+                console.error('Error cargando localStorage:', e);
+                currentHistory = [];
+            }
+        }
+
+        function saveLocalHistory() {
+            try {
+                localStorage.setItem(LOCAL_STORAGE_KEY, JSON.stringify(currentHistory));
+            } catch (e) {
+                console.error('Error guardando localStorage:', e);
+            }
+        }
+
+        // Consultar estado del backend y nuevo historial
+        async function fetchStatusAndHistory() {
+            try {
+                const res = await fetch('/history');
+                if (!res.ok) throw new Error('Error HTTP ' + res.status);
+                const data = await res.json();
+
+                const serverList = data.notifications || [];
+                let hasNew = false;
+
+                // Combinar transacciones nuevas evitando duplicar por referencia + fecha
+                serverList.forEach(serverItem => {
+                    const exists = currentHistory.some(localItem => 
+                        localItem.referencia === serverItem.referencia && 
+                        localItem.receivedAt === serverItem.receivedAt
+                    );
+                    if (!exists) {
+                        currentHistory.unshift(serverItem);
+                        hasNew = true;
+                    }
+                });
+
+                if (hasNew) {
+                    saveLocalHistory();
+                    renderList();
+                }
+
+                document.getElementById('lastPollingTime').textContent = 
+                    'Última sincronización: ' + new Date().toLocaleTimeString();
+
+            } catch (err) {
+                document.getElementById('lastPollingTime').textContent = 
+                    'Error de conexión con el backend';
+            }
+        }
+
+        // Consultar estado general del servidor
+        async function fetchServerConfig() {
+            try {
+                const res = await fetch('/api/status');
+                if (!res.ok) return;
+                const data = await res.json();
+
+                const origin = window.location.origin;
+                document.getElementById('webhookUrlInput').value = origin + '/webhooks/pagos';
+                document.getElementById('apiKeyInput').value = data.configuredApiKey || 'Sin configurar';
+
+                isSimulatingFail = !!data.simulateFailures;
+                updateFailureUI();
+            } catch (e) {
+                console.warn('Error leyendo configuración:', e);
+            }
+        }
+
+        function updateFailureUI() {
+            const btn = document.getElementById('toggleFailBtn');
+            const text = document.getElementById('toggleFailText');
+            const simBadge = document.getElementById('simModeBadge');
+            const respMode = document.getElementById('statResponseMode');
+            const respSub = document.getElementById('statResponseSub');
+
+            if (isSimulatingFail) {
+                btn.classList.remove('bg-amber-500/10', 'text-amber-300', 'border-amber-500/30');
+                btn.classList.add('bg-rose-500/20', 'text-rose-300', 'border-rose-500/40');
+                text.textContent = 'Simulación de Error 500 ACTIVA (Click para normalizar a 200)';
+                simBadge.classList.remove('hidden');
+                respMode.textContent = 'HTTP 500 Error';
+                respMode.className = 'text-lg font-semibold text-rose-400 mt-1';
+                respSub.textContent = 'Forzando reintentos en Celupagos';
+            } else {
+                btn.classList.add('bg-amber-500/10', 'text-amber-300', 'border-amber-500/30');
+                btn.classList.remove('bg-rose-500/20', 'text-rose-300', 'border-rose-500/40');
+                text.textContent = 'Activar Simulación de Error 500 (Probar Reintentos)';
+                simBadge.classList.add('hidden');
+                respMode.textContent = 'HTTP 200 OK';
+                respMode.className = 'text-lg font-semibold text-emerald-400 mt-1';
+                respSub.textContent = 'Modo de operación normal';
+            }
+        }
+
+        async function toggleSimulateFailure() {
+            try {
+                const res = await fetch('/config/toggle-fail', { method: 'POST' });
+                const data = await res.json();
+                isSimulatingFail = !!data.simulateFailures;
+                updateFailureUI();
+            } catch (e) {
+                alert('No se pudo cambiar el modo de simulación');
+            }
+        }
+
+        async function clearHistory() {
+            if (!confirm('¿Deseas limpiar todo el historial de notificaciones recibidas?')) return;
+            try {
+                await fetch('/history/clear', { method: 'POST' });
+            } catch (e) {}
+            currentHistory = [];
+            saveLocalHistory();
+            renderList();
+        }
+
+        // Renderizado del Feed de Notificaciones y Métricas
+        function renderList() {
+            const container = document.getElementById('notificationsContainer');
+            const emptyState = document.getElementById('emptyState');
+
+            // Métricas
+            document.getElementById('statCount').textContent = currentHistory.length;
+
+            let totalMonto = 0;
+            currentHistory.forEach(item => {
+                const m = parseFloat(item.monto || 0);
+                if (!isNaN(m)) totalMonto += m;
+            });
+            document.getElementById('statTotalAmount').textContent = 
+                totalMonto.toLocaleString('es-VE', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) + ' VES';
+
+            if (currentHistory.length === 0) {
+                container.innerHTML = '';
+                container.appendChild(emptyState);
+                document.getElementById('statLastRef').textContent = 'Ninguno';
+                document.getElementById('statLastTime').textContent = 'En espera de transacciones';
+                return;
+            }
+
+            emptyState.remove();
+
+            const lastItem = currentHistory[0];
+            document.getElementById('statLastRef').textContent = 'Ref: ' + lastItem.referencia;
+            document.getElementById('statLastTime').textContent = new Date(lastItem.receivedAt).toLocaleTimeString();
+
+            container.innerHTML = currentHistory.map((item, idx) => {
+                const jsonStr = encodeURIComponent(JSON.stringify(item.payload || item, null, 2));
+                const fechaFormat = new Date(item.receivedAt).toLocaleString('es-VE');
+                const bancoRec = item.payload?.bancoReceptor || item.payload?.transaccion?.bancoDestino || '0102';
+                const bancoEmisor = item.payload?.transaccion?.bancoOrigen || item.payload?.origen?.banco || 'N/A';
+                const nombreBanco = bancoRec === '0102' ? 'Banco de Venezuela (0102)' : 
+                                   (bancoRec === '0104' ? 'Venezolano de Crédito (0104)' : `Banco ${bancoRec}`);
+
+                return `
+                <div class="bg-slate-950 border border-slate-800 hover:border-slate-700 transition rounded-xl p-4 shadow flex flex-col md:flex-row md:items-center justify-between gap-4">
+                    <div class="flex items-start space-x-3">
+                        <div class="w-9 h-9 rounded-lg bg-emerald-500/10 border border-emerald-500/20 text-emerald-400 flex items-center justify-center font-bold text-xs shrink-0 mt-0.5">
+                            OK
+                        </div>
+                        <div class="space-y-1">
+                            <div class="flex flex-wrap items-center gap-2">
+                                <span class="font-mono text-sm font-bold text-white tracking-wide">Ref: ${item.referencia}</span>
+                                <span class="px-2 py-0.5 text-[11px] font-semibold rounded bg-blue-500/10 text-blue-400 border border-blue-500/20">
+                                    ${nombreBanco}
+                                </span>
+                                <span class="text-xs text-slate-500">${fechaFormat}</span>
+                            </div>
+                            <div class="text-xs text-slate-400 flex flex-wrap gap-x-4 gap-y-1">
+                                <span><strong>Pagador:</strong> ${item.pagador}</span>
+                                <span><strong>Banco Origen:</strong> ${bancoEmisor}</span>
+                                <span><strong>Comercio Destino:</strong> ${item.comercioDestino || 'N/A'}</span>
+                            </div>
+                            <div class="text-xs text-slate-400">
+                                <strong>Concepto:</strong> <span class="text-slate-300">${item.payload?.transaccion?.concepto || 'Sin concepto'}</span>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="flex items-center justify-between md:justify-end space-x-4 shrink-0 pt-2 md:pt-0 border-t md:border-t-0 border-slate-800">
+                        <div class="text-right">
+                            <div class="text-base font-extrabold text-emerald-400 font-mono">
+                                ${parseFloat(item.monto || 0).toLocaleString('es-VE', { minimumFractionDigits: 2 })} ${item.moneda || 'VES'}
+                            </div>
+                            <div class="text-[11px] text-slate-500">200 Aprobado</div>
+                        </div>
+                        <button onclick="viewJson('${item.referencia}', '${jsonStr}')" 
+                            class="px-3 py-1.5 bg-slate-800 hover:bg-slate-700 text-slate-200 border border-slate-700 rounded-lg text-xs font-medium transition">
+                            Ver JSON
+                        </button>
+                    </div>
+                </div>
+                `;
+            }).join('');
+        }
+
+        // Modal JSON
+        function viewJson(referencia, encodedJson) {
+            document.getElementById('modalRefTitle').textContent = 'Ref: ' + referencia;
+            document.getElementById('jsonPayloadDisplay').textContent = decodeURIComponent(encodedJson);
+            document.getElementById('jsonModal').classList.remove('hidden');
+        }
+
+        function closeJsonModal() {
+            document.getElementById('jsonModal').classList.add('hidden');
+        }
+
+        function copyModalJson(btn) {
+            const text = document.getElementById('jsonPayloadDisplay').textContent;
+            navigator.clipboard.writeText(text).then(() => {
+                const prev = btn.textContent;
+                btn.textContent = 'Copiado!';
+                setTimeout(() => btn.textContent = prev, 1500);
+            });
+        }
+
+        function copyToClipboard(elementId, btn) {
+            const input = document.getElementById(elementId);
+            navigator.clipboard.writeText(input.value).then(() => {
+                const prev = btn.innerHTML;
+                btn.innerHTML = '<span>Copiado!</span>';
+                setTimeout(() => btn.innerHTML = prev, 1500);
+            });
+        }
+
+        // Inicialización
+        loadLocalHistory();
+        renderList();
+        fetchServerConfig();
+        fetchStatusAndHistory();
+
+        // Polling cada 2 segundos
+        setInterval(fetchStatusAndHistory, 2000);
+    </script>
+</body>
+</html>
