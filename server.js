@@ -1,9 +1,39 @@
 const express = require('express');
 const path = require('path');
+const fs = require('fs');
+const os = require('os');
 
 const app = express();
 const PORT = process.env.PORT || 4000;
 const API_KEY = process.env.API_KEY || 'mi_clave_secreta_webhook_123';
+
+// Ruta de persistencia local (en Vercel /tmp, en local o Render la carpeta data/)
+const STORAGE_DIR = process.env.VERCEL ? os.tmpdir() : path.join(__dirname, 'data');
+const STORAGE_FILE = path.join(STORAGE_DIR, 'webhook_history.json');
+
+function loadHistoryFromDisk() {
+    try {
+        if (fs.existsSync(STORAGE_FILE)) {
+            const raw = fs.readFileSync(STORAGE_FILE, 'utf-8');
+            const data = JSON.parse(raw);
+            if (Array.isArray(data)) return data;
+        }
+    } catch (e) {
+        console.warn('No se pudo leer archivo de historial:', e.message);
+    }
+    return [];
+}
+
+function saveHistoryToDisk(list) {
+    try {
+        if (!fs.existsSync(STORAGE_DIR)) {
+            fs.mkdirSync(STORAGE_DIR, { recursive: true });
+        }
+        fs.writeFileSync(STORAGE_FILE, JSON.stringify(list, null, 2), 'utf-8');
+    } catch (e) {
+        console.warn('No se pudo persistir archivo de historial:', e.message);
+    }
+}
 
 // Normalizar req.url cuando Vercel o proxies reescriben la ruta
 app.use((req, res, next) => {
@@ -27,10 +57,10 @@ app.use(express.json());
 // Servir archivos estáticos del frontend
 app.use(express.static(path.join(__dirname, 'public')));
 
-// Estado en memoria para pruebas
+// Estado en memoria y disco para pruebas
 let simulateFailures = false;
 let simulateFailureStatusCode = 500;
-const history = global.__webhook_history || [];
+const history = global.__webhook_history || loadHistoryFromDisk();
 global.__webhook_history = history;
 
 // Middleware de Logging
@@ -123,7 +153,7 @@ const webhookHandler = (req, res) => {
     console.log('Payload JSON Completo:\n', JSON.stringify(payload, null, 2));
     console.log('============================================================\n');
 
-    // Registrar en histórico en memoria
+    // Registrar en histórico en memoria y disco
     history.unshift({
         receivedAt: fechaRecepcion,
         referencia,
@@ -137,6 +167,7 @@ const webhookHandler = (req, res) => {
     if (history.length > 100) {
         history.pop();
     }
+    saveHistoryToDisk(history);
 
     // Respuesta esperada según Estándar V1.0
     return res.status(200).json({
@@ -154,6 +185,13 @@ app.post('/payment/push/notification', webhookHandler);
 
 // 3. Consultar Histórico de Notificaciones
 app.get('/history', (req, res) => {
+    // Si la memoria de la instancia está vacía, refrescar desde disco
+    if (history.length === 0) {
+        const diskItems = loadHistoryFromDisk();
+        if (diskItems.length > 0) {
+            history.push(...diskItems);
+        }
+    }
     res.json({
         total: history.length,
         notifications: history
@@ -162,6 +200,7 @@ app.get('/history', (req, res) => {
 
 app.post('/history/clear', (req, res) => {
     history.length = 0;
+    saveHistoryToDisk(history);
     res.json({ success: true, message: 'Historial de notificaciones limpiado.' });
 });
 
