@@ -149,13 +149,18 @@ app.post('/config/toggle-fail', (req, res) => {
     });
 });
 
-// Iniciar Servidor
-app.listen(PORT, () => {
-    console.log('============================================================');
-    console.log(`BANCO RECEPTOR SIMULADOR EN LINEA`);
-    console.log(`Puerto:                http://localhost:${PORT}`);
-    console.log(`Webhook URL:           http://localhost:${PORT}/webhooks/pagos`);
-    console.log(`API Key Requerida:     ${API_KEY}`);
-    console.log(`Modo Simulacion Fallo: ${simulateFailures ? 'ACTIVADO' : 'DESACTIVADO'}`);
-    console.log('============================================================');
-});
+// Exportar app para despliegues Serverless (como Vercel) y pruebas
+module.exports = app;
+
+// Iniciar Servidor en entornos tradicionales / contenedores (Render, Railway, local)
+if (require.main === module || !process.env.VERCEL) {
+    app.listen(PORT, () => {
+        console.log('============================================================');
+        console.log(`BANCO RECEPTOR SIMULADOR EN LINEA`);
+        console.log(`Puerto:                http://localhost:${PORT}`);
+        console.log(`Webhook URL:           http://localhost:${PORT}/webhooks/pagos`);
+        console.log(`API Key Requerida:     ${API_KEY}`);
+        console.log(`Modo Simulacion Fallo: ${simulateFailures ? 'ACTIVADO' : 'DESACTIVADO'}`);
+        console.log('============================================================');
+    });
+}
