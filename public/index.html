@@ -187,15 +187,27 @@
     <!-- Lógica JavaScript del Dashboard -->
     <script>
         const LOCAL_STORAGE_KEY = 'celupagos_webhook_history';
+        const CLEARED_AT_KEY = 'celupagos_webhook_cleared_at';
         let currentHistory = [];
         let isSimulatingFail = false;
 
-        // Cargar historial previo de localStorage
+        function getClearedAt() {
+            return parseInt(localStorage.getItem(CLEARED_AT_KEY) || '0', 10);
+        }
+
+        // Cargar historial previo de localStorage respetando el corte de limpieza
         function loadLocalHistory() {
             try {
+                const clearedAt = getClearedAt();
                 const stored = localStorage.getItem(LOCAL_STORAGE_KEY);
                 if (stored) {
-                    currentHistory = JSON.parse(stored);
+                    const parsed = JSON.parse(stored);
+                    if (Array.isArray(parsed)) {
+                        currentHistory = parsed.filter(item => {
+                            const t = new Date(item.receivedAt).getTime();
+                            return t > clearedAt;
+                        });
+                    }
                 }
             } catch (e) {
                 console.error('Error cargando localStorage:', e);
@@ -218,7 +230,21 @@
                 if (!res.ok) throw new Error('Error HTTP ' + res.status);
                 const data = await res.json();
 
-                const serverList = data.notifications || [];
+                // Sincronizar estado de simulación de fallo si el servidor lo retorna
+                if (data.simulateFailures !== undefined && isSimulatingFail !== !!data.simulateFailures) {
+                    isSimulatingFail = !!data.simulateFailures;
+                    updateFailureUI();
+                }
+
+                const clearedAt = getClearedAt();
+                const rawList = data.notifications || [];
+
+                // Filtrar estrictamente cualquier item recibido antes o en el timestamp de limpieza
+                const serverList = rawList.filter(item => {
+                    const t = new Date(item.receivedAt).getTime();
+                    return t > clearedAt;
+                });
+
                 let hasNew = false;
 
                 // Combinar transacciones nuevas evitando duplicar por referencia + fecha
@@ -303,12 +329,18 @@
         }
 
         async function clearHistory() {
-            // Limpieza inmediata local y en servidor
+            // Guardar marca de corte para ignorar notificaciones viejas devueltas por cualquier lambda
+            const now = Date.now();
+            localStorage.setItem(CLEARED_AT_KEY, String(now));
             localStorage.removeItem(LOCAL_STORAGE_KEY);
             currentHistory = [];
             renderList();
             try {
-                await fetch('/history/clear', { method: 'POST' });
+                await fetch('/history/clear', { 
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ clearedAt: now })
+                });
             } catch (e) {
                 console.warn('Error al limpiar historial remoto:', e);
             }
@@ -351,6 +383,9 @@
                 const badgeTxt = isErr ? '500' : 'OK';
                 const cardBorder = isErr ? 'bg-rose-950/20 border-rose-900/50 hover:border-rose-700/60' : 'bg-slate-950 border-slate-800 hover:border-slate-700';
                 const statusTag = isErr ? '<span class="px-2 py-0.5 text-[11px] font-semibold rounded bg-rose-500/20 text-rose-300 border border-rose-500/30">Fallo Simulado (HTTP 500 - Celupagos Reintentara)</span>' : '<span class="px-2 py-0.5 text-[11px] font-semibold rounded bg-emerald-500/10 text-emerald-400 border border-emerald-500/20">HTTP 200 OK</span>';
+                const amountColor = isErr ? 'text-rose-400' : 'text-emerald-400';
+                const statusRight = isErr ? '500 Rechazado' : '200 Aprobado';
+                const statusRightColor = isErr ? 'text-rose-400 font-medium' : 'text-slate-500';
 
                 return `
                 <div class="${cardBorder} border transition rounded-xl p-4 shadow flex flex-col md:flex-row md:items-center justify-between gap-4">
@@ -380,10 +415,10 @@
 
                     <div class="flex items-center justify-between md:justify-end space-x-4 shrink-0 pt-2 md:pt-0 border-t md:border-t-0 border-slate-800">
                         <div class="text-right">
-                            <div class="text-base font-extrabold text-emerald-400 font-mono">
+                            <div class="text-base font-extrabold ${amountColor} font-mono">
                                 ${parseFloat(item.monto || 0).toLocaleString('es-VE', { minimumFractionDigits: 2 })} ${item.moneda || 'VES'}
                             </div>
-                            <div class="text-[11px] text-slate-500">200 Aprobado</div>
+                            <div class="text-[11px] ${statusRightColor}">${statusRight}</div>
                         </div>
                         <button onclick="viewJson('${item.referencia}', '${jsonStr}')" 
                             class="px-3 py-1.5 bg-slate-800 hover:bg-slate-700 text-slate-200 border border-slate-700 rounded-lg text-xs font-medium transition">
@@ -393,45 +428,6 @@
                 </div>
                 `;
             }).join('');
-        }
-
-        // Modal JSON
-        function viewJson(referencia, encodedJson) {
-            document.getElementById('modalRefTitle').textContent = 'Ref: ' + referencia;
-            document.getElementById('jsonPayloadDisplay').textContent = decodeURIComponent(encodedJson);
-            document.getElementById('jsonModal').classList.remove('hidden');
-        }
-
-        function closeJsonModal() {
-            document.getElementById('jsonModal').classList.add('hidden');
-        }
-
-        function copyModalJson(btn) {
-            const text = document.getElementById('jsonPayloadDisplay').textContent;
-            navigator.clipboard.writeText(text).then(() => {
-                const prev = btn.textContent;
-                btn.textContent = 'Copiado!';
-                setTimeout(() => btn.textContent = prev, 1500);
-            });
-        }
-
-        function copyToClipboard(elementId, btn) {
-            const input = document.getElementById(elementId);
-            navigator.clipboard.writeText(input.value).then(() => {
-                const prev = btn.innerHTML;
-                btn.innerHTML = '<span>Copiado!</span>';
-                setTimeout(() => btn.innerHTML = prev, 1500);
-            });
-        }
-
-        // Inicialización
-        loadLocalHistory();
-        renderList();
-        fetchServerConfig();
-        fetchStatusAndHistory();
-
-        // Polling cada 2 segundos
-        setInterval(fetchStatusAndHistory, 2000);
-    </script>
+        }    </script>
 </body>
 </html>

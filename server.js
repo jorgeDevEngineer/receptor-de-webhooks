@@ -10,6 +10,30 @@ const API_KEY = process.env.API_KEY || 'mi_clave_secreta_webhook_123';
 // Ruta de persistencia local (en Vercel /tmp, en local o Render la carpeta data/)
 const STORAGE_DIR = process.env.VERCEL ? os.tmpdir() : path.join(__dirname, 'data');
 const STORAGE_FILE = path.join(STORAGE_DIR, 'webhook_history.json');
+const CONFIG_FILE = path.join(STORAGE_DIR, 'webhook_config.json');
+
+function loadConfigFromDisk() {
+    try {
+        if (fs.existsSync(CONFIG_FILE)) {
+            const raw = fs.readFileSync(CONFIG_FILE, 'utf-8');
+            return JSON.parse(raw);
+        }
+    } catch (e) {
+        // ignore
+    }
+    return { simulateFailures: false, statusCode: 500, clearedAt: 0 };
+}
+
+function saveConfigToDisk(cfg) {
+    try {
+        if (!fs.existsSync(STORAGE_DIR)) {
+            fs.mkdirSync(STORAGE_DIR, { recursive: true });
+        }
+        fs.writeFileSync(CONFIG_FILE, JSON.stringify(cfg, null, 2), 'utf-8');
+    } catch (e) {
+        // ignore
+    }
+}
 
 function loadHistoryFromDisk() {
     try {
@@ -57,9 +81,10 @@ app.use(express.json());
 // Servir archivos estáticos del frontend
 app.use(express.static(path.join(__dirname, 'public')));
 
-// Estado en memoria y disco para pruebas
-let simulateFailures = false;
-let simulateFailureStatusCode = 500;
+// Estado inicial sincronizado con disco
+const initialCfg = loadConfigFromDisk();
+let simulateFailures = !!initialCfg.simulateFailures;
+let simulateFailureStatusCode = initialCfg.statusCode || 500;
 const history = global.__webhook_history || loadHistoryFromDisk();
 global.__webhook_history = history;
 
@@ -71,12 +96,13 @@ app.use((req, res, next) => {
 });
 
 function getServerStatus() {
+    const cfg = loadConfigFromDisk();
     return {
         service: 'Banco Receptor Simulador (Webhook Celupagos V1.0)',
         status: 'ONLINE',
         port: PORT,
         configuredApiKey: API_KEY,
-        simulateFailures,
+        simulateFailures: !!cfg.simulateFailures,
         totalNotificationsReceived: history.length,
         endpoints: {
             dashboard: 'GET /',
@@ -130,9 +156,14 @@ const webhookHandler = (req, res) => {
     const bancoEmisor = transaccion?.bancoOrigen || origen?.banco || 'N/A';
     const comercioDestino = destino?.idComercio || 'N/A';
 
+    // Cargar config fresca desde disco por si otra instancia la modificó
+    const cfg = loadConfigFromDisk();
+    const isFail = cfg.simulateFailures || simulateFailures;
+    const failCode = cfg.statusCode || simulateFailureStatusCode || 500;
+
     // Simulación controlada de fallos para probar reintentos
-    if (simulateFailures) {
-        console.warn(`\n[SIMULACION DE ERROR ACTIVA] Rechazando pago con HTTP ${simulateFailureStatusCode}. Ref: ${referencia}`);
+    if (isFail) {
+        console.warn(`\n[SIMULACION DE ERROR ACTIVA] Rechazando pago con HTTP ${failCode}. Ref: ${referencia}`);
         
         // Registrar intento fallido para visibilidad en tiempo real en el Dashboard
         history.unshift({
@@ -143,15 +174,15 @@ const webhookHandler = (req, res) => {
             pagador,
             comercioDestino,
             isError: true,
-            httpStatus: simulateFailureStatusCode,
+            httpStatus: failCode,
             payload
         });
         if (history.length > 100) history.pop();
         saveHistoryToDisk(history);
 
-        return res.status(simulateFailureStatusCode).json({
+        return res.status(failCode).json({
             success: false,
-            error: `Simulacion de fallo activada en servidor (HTTP ${simulateFailureStatusCode})`,
+            error: `Simulacion de fallo activada en servidor (HTTP ${failCode})`,
             referencia,
             processedAt: fechaRecepcion
         });
@@ -205,38 +236,51 @@ app.post('/payment/push/notification', webhookHandler);
 
 // 3. Consultar Histórico de Notificaciones
 app.get('/history', (req, res) => {
-    // Si la memoria de la instancia está vacía, refrescar desde disco
+    const cfg = loadConfigFromDisk();
     if (history.length === 0) {
         const diskItems = loadHistoryFromDisk();
         if (diskItems.length > 0) {
             history.push(...diskItems);
         }
     }
+    let list = history;
+    if (cfg.clearedAt && cfg.clearedAt > 0) {
+        list = list.filter(it => new Date(it.receivedAt).getTime() > cfg.clearedAt);
+    }
     res.json({
-        total: history.length,
-        notifications: history
+        total: list.length,
+        notifications: list,
+        simulateFailures: !!cfg.simulateFailures,
+        clearedAt: cfg.clearedAt || 0
     });
 });
 
 app.post('/history/clear', (req, res) => {
     history.length = 0;
-    saveHistoryToDisk(history);
-    res.json({ success: true, message: 'Historial de notificaciones limpiado.' });
+    saveHistoryToDisk([]);
+    const cfg = loadConfigFromDisk();
+    cfg.clearedAt = req.body?.clearedAt || Date.now();
+    saveConfigToDisk(cfg);
+    res.json({ success: true, message: 'Historial de notificaciones limpiado.', clearedAt: cfg.clearedAt });
 });
 
 // 4. Controlador de Fallos para Probar Reintentos de Celupagos
 app.post('/config/toggle-fail', (req, res) => {
-    simulateFailures = !simulateFailures;
+    const cfg = loadConfigFromDisk();
+    cfg.simulateFailures = !cfg.simulateFailures;
+    simulateFailures = cfg.simulateFailures;
     if (req.body?.statusCode) {
-        simulateFailureStatusCode = parseInt(req.body.statusCode, 10) || 500;
+        cfg.statusCode = parseInt(req.body.statusCode, 10) || 500;
+        simulateFailureStatusCode = cfg.statusCode;
     }
-    console.log(`[CONFIG] Modo simulacion de fallos: ${simulateFailures ? `ACTIVADO (Status ${simulateFailureStatusCode})` : 'DESACTIVADO (200 OK Normal)'}`);
+    saveConfigToDisk(cfg);
+    console.log(`[CONFIG] Modo simulacion de fallos: ${cfg.simulateFailures ? `ACTIVADO (Status ${cfg.statusCode || 500})` : 'DESACTIVADO (200 OK Normal)'}`);
     res.json({
         success: true,
-        simulateFailures,
-        statusCode: simulateFailureStatusCode,
-        message: simulateFailures
-            ? `El servidor ahora respondera con error ${simulateFailureStatusCode} para forzar reintentos en Celupagos.`
+        simulateFailures: cfg.simulateFailures,
+        statusCode: cfg.statusCode || 500,
+        message: cfg.simulateFailures
+            ? `El servidor ahora respondera con error ${cfg.statusCode || 500} para forzar reintentos en Celupagos.`
             : 'El servidor ahora respondera normalmente con 200 OK.'
     });
 });
