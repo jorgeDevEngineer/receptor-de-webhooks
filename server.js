@@ -163,23 +163,7 @@ const webhookHandler = (req, res) => {
 
     // Simulación controlada de fallos para probar reintentos
     if (isFail) {
-        console.warn(`\n[SIMULACION DE ERROR ACTIVA] Rechazando pago con HTTP ${failCode}. Ref: ${referencia}`);
-        
-        // Registrar intento fallido para visibilidad en tiempo real en el Dashboard
-        history.unshift({
-            receivedAt: fechaRecepcion,
-            referencia,
-            monto,
-            moneda,
-            pagador,
-            comercioDestino,
-            isError: true,
-            httpStatus: failCode,
-            payload
-        });
-        if (history.length > 100) history.pop();
-        saveHistoryToDisk(history);
-
+        console.warn(`\n[SIMULACION DE ERROR ACTIVA] Rechazando pago con HTTP ${failCode}. Ref: ${referencia}. NO se registra en historial ni contador.`);
         return res.status(failCode).json({
             success: false,
             error: `Simulacion de fallo activada en servidor (HTTP ${failCode})`,

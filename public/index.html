@@ -305,7 +305,7 @@
                 simBadge.classList.remove('hidden');
                 respMode.textContent = 'HTTP 500 Error';
                 respMode.className = 'text-lg font-semibold text-rose-400 mt-1';
-                respSub.textContent = 'Forzando reintentos en Celupagos';
+                respSub.textContent = 'Rechazando pagos (Contador congelado hasta volver a 200)';
             } else {
                 btn.classList.add('bg-amber-500/10', 'text-amber-300', 'border-amber-500/30');
                 btn.classList.remove('bg-rose-500/20', 'text-rose-300', 'border-rose-500/40');
@@ -353,10 +353,11 @@
             const container = document.getElementById('notificationsContainer');
             const emptyState = document.getElementById('emptyState');
 
-            // Métricas
-            document.getElementById('statCount').textContent = currentHistory.length;
+            // Métricas: Solo contabilizar pagos exitosos HTTP 200
+            const approvedList = currentHistory.filter(it => !it.isError && it.httpStatus === 200);
+            document.getElementById('statCount').textContent = approvedList.length;
 
-            if (currentHistory.length === 0) {
+            if (approvedList.length === 0) {
                 container.innerHTML = '';
                 container.appendChild(emptyState);
                 document.getElementById('statLastRef').textContent = 'Ninguno';
@@ -366,7 +367,7 @@
 
             emptyState.remove();
 
-            const lastItem = currentHistory[0];
+            const lastItem = approvedList[0];
             document.getElementById('statLastRef').textContent = 'Ref: ' + lastItem.referencia;
             document.getElementById('statLastTime').textContent = new Date(lastItem.receivedAt).toLocaleTimeString();
 
