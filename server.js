@@ -118,15 +118,6 @@ const webhookHandler = (req, res) => {
         });
     }
 
-    // Simulación controlada de fallos para probar reintentos
-    if (simulateFailures) {
-        console.warn(`[SIMULACION DE ERROR] Respondiendo con HTTP ${simulateFailureStatusCode} segun configuracion de prueba.`);
-        return res.status(simulateFailureStatusCode).json({
-            success: false,
-            error: `Simulacion de fallo activada en servidor (HTTP ${simulateFailureStatusCode})`
-        });
-    }
-
     const payload = req.body || {};
     const { evento, transaccion, origen, destino, bancoReceptor } = payload;
 
@@ -138,6 +129,33 @@ const webhookHandler = (req, res) => {
     const telefonoPagador = origen?.telefono || 'N/A';
     const bancoEmisor = transaccion?.bancoOrigen || origen?.banco || 'N/A';
     const comercioDestino = destino?.idComercio || 'N/A';
+
+    // Simulación controlada de fallos para probar reintentos
+    if (simulateFailures) {
+        console.warn(`\n[SIMULACION DE ERROR ACTIVA] Rechazando pago con HTTP ${simulateFailureStatusCode}. Ref: ${referencia}`);
+        
+        // Registrar intento fallido para visibilidad en tiempo real en el Dashboard
+        history.unshift({
+            receivedAt: fechaRecepcion,
+            referencia,
+            monto,
+            moneda,
+            pagador,
+            comercioDestino,
+            isError: true,
+            httpStatus: simulateFailureStatusCode,
+            payload
+        });
+        if (history.length > 100) history.pop();
+        saveHistoryToDisk(history);
+
+        return res.status(simulateFailureStatusCode).json({
+            success: false,
+            error: `Simulacion de fallo activada en servidor (HTTP ${simulateFailureStatusCode})`,
+            referencia,
+            processedAt: fechaRecepcion
+        });
+    }
 
     console.log('\n============================================================');
     console.log(`[PAGO RECIBIDO EXITOSAMENTE] Ref: ${referencia}`);
@@ -161,6 +179,8 @@ const webhookHandler = (req, res) => {
         moneda,
         pagador,
         comercioDestino,
+        isError: false,
+        httpStatus: 200,
         payload
     });
 

@@ -303,13 +303,17 @@
         }
 
         async function clearHistory() {
-            if (!confirm('¿Deseas limpiar todo el historial de notificaciones recibidas?')) return;
+            // Limpieza inmediata local y en servidor
+            localStorage.removeItem(LOCAL_STORAGE_KEY);
+            currentHistory = [];
+            renderList();
             try {
                 await fetch('/history/clear', { method: 'POST' });
-            } catch (e) {}
-            currentHistory = [];
-            saveLocalHistory();
-            renderList();
+            } catch (e) {
+                console.warn('Error al limpiar historial remoto:', e);
+            }
+            const syncLabel = document.getElementById('lastPollingTime');
+            if (syncLabel) syncLabel.textContent = 'Historial limpiado exitosamente (' + new Date().toLocaleTimeString() + ')';
         }
 
         // Renderizado del Feed de Notificaciones y Métricas
@@ -342,11 +346,17 @@
                 const nombreBanco = bancoRec === '0102' ? 'Banco de Venezuela (0102)' : 
                                    (bancoRec === '0104' ? 'Venezolano de Crédito (0104)' : `Banco ${bancoRec}`);
 
+                const isErr = !!item.isError || item.httpStatus === 500;
+                const badgeBg = isErr ? 'bg-rose-500/20 border border-rose-500/40 text-rose-300' : 'bg-emerald-500/10 border border-emerald-500/20 text-emerald-400';
+                const badgeTxt = isErr ? '500' : 'OK';
+                const cardBorder = isErr ? 'bg-rose-950/20 border-rose-900/50 hover:border-rose-700/60' : 'bg-slate-950 border-slate-800 hover:border-slate-700';
+                const statusTag = isErr ? '<span class="px-2 py-0.5 text-[11px] font-semibold rounded bg-rose-500/20 text-rose-300 border border-rose-500/30">Fallo Simulado (HTTP 500 - Celupagos Reintentara)</span>' : '<span class="px-2 py-0.5 text-[11px] font-semibold rounded bg-emerald-500/10 text-emerald-400 border border-emerald-500/20">HTTP 200 OK</span>';
+
                 return `
-                <div class="bg-slate-950 border border-slate-800 hover:border-slate-700 transition rounded-xl p-4 shadow flex flex-col md:flex-row md:items-center justify-between gap-4">
+                <div class="${cardBorder} border transition rounded-xl p-4 shadow flex flex-col md:flex-row md:items-center justify-between gap-4">
                     <div class="flex items-start space-x-3">
-                        <div class="w-9 h-9 rounded-lg bg-emerald-500/10 border border-emerald-500/20 text-emerald-400 flex items-center justify-center font-bold text-xs shrink-0 mt-0.5">
-                            OK
+                        <div class="w-9 h-9 rounded-lg ${badgeBg} flex items-center justify-center font-bold text-xs shrink-0 mt-0.5">
+                            ${badgeTxt}
                         </div>
                         <div class="space-y-1">
                             <div class="flex flex-wrap items-center gap-2">
@@ -354,6 +364,7 @@
                                 <span class="px-2 py-0.5 text-[11px] font-semibold rounded bg-blue-500/10 text-blue-400 border border-blue-500/20">
                                     ${nombreBanco}
                                 </span>
+                                ${statusTag}
                                 <span class="text-xs text-slate-500">${fechaFormat}</span>
                             </div>
                             <div class="text-xs text-slate-400 flex flex-wrap gap-x-4 gap-y-1">
