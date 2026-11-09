@@ -429,6 +429,46 @@
                 </div>
                 `;
             }).join('');
-        }    </script>
+        }
+
+        // Modal JSON
+        function viewJson(referencia, encodedJson) {
+            document.getElementById('modalRefTitle').textContent = 'Ref: ' + referencia;
+            document.getElementById('jsonPayloadDisplay').textContent = decodeURIComponent(encodedJson);
+            document.getElementById('jsonModal').classList.remove('hidden');
+        }
+
+        function closeJsonModal() {
+            document.getElementById('jsonModal').classList.add('hidden');
+        }
+
+        function copyModalJson(btn) {
+            const text = document.getElementById('jsonPayloadDisplay').textContent;
+            navigator.clipboard.writeText(text).then(() => {
+                const prev = btn.textContent;
+                btn.textContent = 'Copiado!';
+                setTimeout(() => btn.textContent = prev, 1500);
+            });
+        }
+
+        function copyToClipboard(elementId, btn) {
+            const input = document.getElementById(elementId);
+            navigator.clipboard.writeText(input.value).then(() => {
+                const prev = btn.innerHTML;
+                btn.innerHTML = '<span>Copiado!</span>';
+                setTimeout(() => btn.innerHTML = prev, 1500);
+            });
+        }
+
+        // Inicialización
+        loadLocalHistory();
+        renderList();
+        fetchServerConfig();
+        fetchStatusAndHistory();
+
+        // Polling cada 2 segundos
+        setInterval(fetchStatusAndHistory, 2000);
+
+    </script>
 </body>
 </html>
